@@ -1,0 +1,65 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog
+    x:Class="FullScreenAlarm.AlarmEditDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    PrimaryButtonText="保存"
+    CloseButtonText="キャンセル"
+    DefaultButton="Primary">
+
+    <ScrollViewer>
+        <StackPanel Spacing="14" MinWidth="360">
+
+            <TextBox x:Name="LabelBox"
+                     Header="ラベル"
+                     PlaceholderText="(任意)"/>
+
+            <TimePicker x:Name="TimeBox"
+                        Header="時刻"
+                        ClockIdentifier="24HourClock"
+                        MinuteIncrement="1"/>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="繰り返す曜日(未選択 = 1回のみ)"/>
+                <StackPanel x:Name="DayPanel" Orientation="Horizontal" Spacing="4"/>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <HyperlinkButton Content="平日" Click="Weekdays_Click"/>
+                    <HyperlinkButton Content="土日" Click="Weekend_Click"/>
+                    <HyperlinkButton Content="毎日" Click="Every_Click"/>
+                    <HyperlinkButton Content="クリア" Click="Clear_Click"/>
+                </StackPanel>
+            </StackPanel>
+
+            <NumberBox x:Name="IntervalBox"
+                       Header="何週ごとに繰り返すか"
+                       Minimum="1"
+                       Maximum="52"
+                       Value="1"
+                       SmallChange="1"
+                       SpinButtonPlacementMode="Inline"/>
+
+            <StackPanel Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <CalendarDatePicker x:Name="StartPicker"
+                                        Header="開始日"
+                                        PlaceholderText="指定なし"/>
+                    <CalendarDatePicker x:Name="EndPicker"
+                                        Header="終了日"
+                                        PlaceholderText="指定なし"/>
+                </StackPanel>
+                <TextBlock Text="1回のみの場合、開始日が実行日になります"
+                           FontSize="12"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+
+            <ToggleSwitch x:Name="SilentSwitch"
+                          Header="無音モード"
+                          OnContent="無音"
+                          OffContent="音あり"/>
+
+            <TextBlock x:Name="ErrorText"
+                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                       Visibility="Collapsed"/>
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>

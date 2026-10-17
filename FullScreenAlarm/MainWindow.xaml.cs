@@ -1,0 +1,308 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Windows.ApplicationModel;
+using Windows.Graphics;
+using Windows.Media.Core;
+using Windows.Media.Playback;
+using Windows.System.Display;
+using WinRT.Interop;
+
+namespace FullScreenAlarm;
+
+public sealed partial class MainWindow : Window
+{
+    private static readonly TimeSpan SnoozeSpan = TimeSpan.FromMinutes(5);
+
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DisplayRequest _displayRequest = new();
+    private readonly IntPtr _hwnd;
+    private readonly List<AlarmRule> _rules = AlarmStore.Load();
+
+    private MediaPlayer? _player;
+    private AlarmRule? _ringingRule;
+    private DateTime? _snoozeUntil;
+    private ContentDialog? _openDialog;
+    private bool _isRinging;
+    private bool _updatingAutoStart;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        _hwnd = WindowNative.GetWindowHandle(this);
+
+        // 設定画面は通常サイズのウィンドウ
+        AppWindow.Resize(new SizeInt32(640, 700));
+
+        ExtendsContentIntoTitleBar = true;
+
+        // 保存済みアラームの次回時刻を計算(期限切れは無効化される)
+        var now = DateTime.Now;
+        foreach (var rule in _rules) Reschedule(rule, now);
+        AlarmStore.Save(_rules);
+        RefreshList();
+        UpdateStatus();
+
+        // 起動中は画面を消灯させない(= アイドルスリープも防ぐ)
+        _displayRequest.RequestActive();
+
+        AppWindow.Closing += AppWindow_Closing;
+
+        _timer.Tick += OnTick;
+        _timer.Start();
+        UpdateClock(now);
+
+        // 自動スタートの現在状態を反映(非同期)
+        _ = InitAutoStartAsync();
+    }
+
+    // ───────── 鳴動モード(全画面)の出入り ─────────
+
+    private void EnterRingMode()
+    {
+        // 最小化されていたら復元してから全画面へ
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } p)
+        {
+            p.Restore();
+        }
+
+        AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+        Activate();
+        NativeMethods.BringToFrontTopmost(_hwnd);
+    }
+
+    private void ExitRingMode()
+    {
+        NativeMethods.ClearTopmost(_hwnd);
+        AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+    }
+
+    // ───────── 終了制御 ─────────
+
+    /// <summary>鳴動中だけ閉じる操作(Alt+F4 等)を無効化。通常時は普通に閉じられる。</summary>
+    private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_isRinging)
+        {
+            args.Cancel = true;
+            return;
+        }
+        Cleanup();
+    }
+
+    private void Cleanup()
+    {
+        _timer.Stop();
+        _player?.Dispose();
+        _displayRequest.RequestRelease();
+    }
+
+    // ───────── 時計 / アラーム判定 ─────────
+
+    private void OnTick(object? sender, object e)
+    {
+        var now = DateTime.Now;
+        UpdateClock(now);
+        if (_isRinging) return;
+
+        // スヌーズ明け
+        if (_snoozeUntil is { } until && now >= until && _ringingRule is { } snoozed)
+        {
+            _snoozeUntil = null;
+            StartRinging(snoozed);
+            return;
+        }
+
+        // 時刻が来たアラーム(同時に複数あっても鳴動は1回)
+        var due = _rules.Where(r => r.NextFire is { } at && at <= now).ToList();
+        if (due.Count == 0) return;
+
+        foreach (var rule in due) Reschedule(rule, now);
+        AlarmStore.Save(_rules);
+        RefreshList();
+        UpdateStatus();
+
+        StartRinging(due[0]);
+    }
+
+    /// <summary>次回時刻を再計算。次回が無い(期限切れ・過去日の1回きり)なら無効化する。</summary>
+    private static void Reschedule(AlarmRule rule, DateTime now)
+    {
+        rule.NextFire = rule.GetNextOccurrence(now);
+        if (rule.Enabled && rule.NextFire is null)
+        {
+            rule.Enabled = false;
+        }
+    }
+
+    private void UpdateClock(DateTime now)
+    {
+        ClockText.Text = now.ToString("HH:mm:ss");
+        DateText.Text = now.ToString("yyyy年M月d日 dddd");
+    }
+
+    private void UpdateStatus()
+    {
+        var times = _rules
+            .Where(r => r.Enabled && r.NextFire.HasValue)
+            .Select(r => r.NextFire!.Value)
+            .ToList();
+        if (_snoozeUntil is { } s) times.Add(s);
+
+        AlarmStatusText.Text = times.Count == 0
+            ? "有効なアラームなし"
+            : $"次のアラーム: {times.Min():M/d (ddd) HH:mm}";
+    }
+
+    // ───────── 設定 UI ─────────
+
+    private void RefreshList()
+    {
+        AlarmList.ItemsSource = _rules
+            .OrderBy(r => r.Time)
+            .Select(r => new AlarmRow(r))
+            .ToList();
+    }
+
+    private async void AddButton_Click(object sender, RoutedEventArgs e)
+    {
+        // 初期値は1分後(動作確認しやすいように)
+        var t = DateTime.Now.AddMinutes(1);
+        await EditAsync(new AlarmRule { Time = new TimeSpan(t.Hour, t.Minute, 0) }, isNew: true);
+    }
+
+    private async void AlarmList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is AlarmRow row)
+        {
+            await EditAsync(row.Rule, isNew: false);
+        }
+    }
+
+    private void Row_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { Tag: AlarmRule rule } box) return;
+
+        rule.Enabled = box.IsChecked == true;
+        Reschedule(rule, DateTime.Now);
+        box.IsChecked = rule.Enabled; // 次回が無く自動で無効化された場合に表示を合わせる
+
+        AlarmStore.Save(_rules);
+        UpdateStatus();
+    }
+
+    private async Task EditAsync(AlarmRule rule, bool isNew)
+    {
+        var dialog = new AlarmEditDialog(rule, isNew) { XamlRoot = Root.XamlRoot };
+        _openDialog = dialog;
+        var result = await dialog.ShowAsync();
+        _openDialog = null;
+
+        switch (result)
+        {
+            case ContentDialogResult.Primary:
+                if (isNew) _rules.Add(rule);
+                Reschedule(rule, DateTime.Now);
+                break;
+            case ContentDialogResult.Secondary:
+                _rules.Remove(rule);
+                break;
+            default:
+                return; // キャンセル、または鳴動で閉じられた
+        }
+
+        AlarmStore.Save(_rules);
+        RefreshList();
+        UpdateStatus();
+    }
+
+    // ───────── 自動スタート ─────────
+
+    /// <summary>ログイン時の自動スタートで起動されたときに呼ぶ(最小化して待機)。</summary>
+    public void StartMinimized()
+    {
+        if (AppWindow.Presenter is OverlappedPresenter p)
+        {
+            p.Minimize();
+        }
+    }
+
+    private async Task InitAutoStartAsync()
+    {
+        ApplyAutoStartState(await StartupManager.GetStateAsync());
+    }
+
+    private async void AutoStartToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_updatingAutoStart) return;
+        ApplyAutoStartState(await StartupManager.SetEnabledAsync(AutoStartToggle.IsOn));
+    }
+
+    /// <summary>スタートアップの状態をトグルとヒント文に反映する(拒否された場合も実際の状態に合わせる)。</summary>
+    private void ApplyAutoStartState(StartupTaskState? state)
+    {
+        _updatingAutoStart = true;
+        AutoStartToggle.IsOn = state is StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy;
+        _updatingAutoStart = false;
+
+        // 切り替えられるのは Disabled / Enabled のときだけ
+        AutoStartToggle.IsEnabled = state is StartupTaskState.Disabled or StartupTaskState.Enabled;
+        AutoStartHint.Text = state switch
+        {
+            null => "自動スタートはパッケージ版でのみ使えます",
+            StartupTaskState.DisabledByUser => "Windows の設定 > アプリ > スタートアップ で許可すると使えます",
+            StartupTaskState.DisabledByPolicy => "ポリシーにより無効化されています",
+            StartupTaskState.EnabledByPolicy => "ポリシーにより有効化されています",
+            _ => "",
+        };
+    }
+
+    // ───────── 鳴動 ─────────
+
+    private void StartRinging(AlarmRule rule)
+    {
+        _openDialog?.Hide(); // 編集ダイアログが開いていたら閉じる(鳴動を優先)
+
+        _ringingRule = rule;
+        _isRinging = true;
+        RingTimeText.Text = rule.Time.ToString(@"hh\:mm");
+        RingLabelText.Text = rule.Label;
+
+        SettingsPanel.Visibility = Visibility.Collapsed;
+        RingPanel.Visibility = Visibility.Visible;
+
+        EnterRingMode();
+
+        // 無音モードのアラームは再生しない
+        if (!rule.Silent)
+        {
+            _player ??= new MediaPlayer
+            {
+                IsLoopingEnabled = true,
+                Source = MediaSource.CreateFromUri(new Uri("ms-appx:///Assets/alarm.mp3")),
+            };
+            _player.Play();
+        }
+    }
+
+    private void StopRinging(bool snooze)
+    {
+        _player?.Pause();
+        _isRinging = false;
+        _snoozeUntil = snooze ? DateTime.Now + SnoozeSpan : null;
+
+        RingPanel.Visibility = Visibility.Collapsed;
+        SettingsPanel.Visibility = Visibility.Visible;
+
+        ExitRingMode();
+        UpdateStatus();
+    }
+
+    private void StopButton_Click(object sender, RoutedEventArgs e) => StopRinging(snooze: false);
+
+    private void SnoozeButton_Click(object sender, RoutedEventArgs e) => StopRinging(snooze: true);
+}

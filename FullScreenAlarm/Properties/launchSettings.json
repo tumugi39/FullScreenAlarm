@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "FullScreenAlarm (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "FullScreenAlarm (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
