@@ -15,6 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Remove="AlarmEditDialog.xaml" />
+    <None Remove="Assets\alarm.ico" />
     <None Remove="Assets\alarm.mp3" />
   </ItemGroup>
 

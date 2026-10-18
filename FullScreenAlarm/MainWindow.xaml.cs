@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
@@ -27,7 +28,10 @@ public sealed partial class MainWindow : Window
     private AlarmRule? _ringingRule;
     private DateTime? _snoozeUntil;
     private ContentDialog? _openDialog;
+    private TrayIcon? _tray;
     private bool _isRinging;
+    private bool _exiting;
+    private bool _hiddenBeforeRing;
     private bool _updatingAutoStart;
 
     public MainWindow()
@@ -35,10 +39,13 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         _hwnd = WindowNative.GetWindowHandle(this);
 
+        // システムトレイ(アイコンは Assets/alarm.ico。無ければ標準アイコン)
+        _tray = new TrayIcon(_hwnd, Path.Combine(AppContext.BaseDirectory, "Assets", "alarm.ico"), "アラーム");
+        _tray.OpenRequested += () => DispatcherQueue.TryEnqueue(ShowFromTray);
+        _tray.ExitRequested += () => DispatcherQueue.TryEnqueue(ExitApp);
+
         // 設定画面は通常サイズのウィンドウ
         AppWindow.Resize(new SizeInt32(640, 700));
-
-        ExtendsContentIntoTitleBar = true;
 
         // 保存済みアラームの次回時刻を計算(期限切れは無効化される)
         var now = DateTime.Now;
@@ -64,6 +71,9 @@ public sealed partial class MainWindow : Window
 
     private void EnterRingMode()
     {
+        // トレイに格納中でも表示する
+        AppWindow.Show();
+
         // 最小化されていたら復元してから全画面へ
         if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } p)
         {
@@ -79,11 +89,20 @@ public sealed partial class MainWindow : Window
     {
         NativeMethods.ClearTopmost(_hwnd);
         AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+
+        // 鳴動前にトレイへ格納されていたなら、止めた後は元のトレイ格納に戻す
+        if (_hiddenBeforeRing)
+        {
+            HideToTray();
+        }
     }
 
     // ───────── 終了制御 ─────────
 
-    /// <summary>鳴動中だけ閉じる操作(Alt+F4 等)を無効化。通常時は普通に閉じられる。</summary>
+    /// <summary>
+    /// 鳴動中は閉じる操作(Alt+F4 等)を無効化。通常の「閉じる」はトレイへ格納し、
+    /// 終了はトレイメニューの「終了」から行う。
+    /// </summary>
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (_isRinging)
@@ -91,11 +110,20 @@ public sealed partial class MainWindow : Window
             args.Cancel = true;
             return;
         }
+
+        if (!_exiting)
+        {
+            args.Cancel = true;
+            HideToTray();
+            return;
+        }
+
         Cleanup();
     }
 
     private void Cleanup()
     {
+        _tray?.Dispose();
         _timer.Stop();
         _player?.Dispose();
         _displayRequest.RequestRelease();
@@ -156,6 +184,8 @@ public sealed partial class MainWindow : Window
         AlarmStatusText.Text = times.Count == 0
             ? "有効なアラームなし"
             : $"次のアラーム: {times.Min():M/d (ddd) HH:mm}";
+
+        _tray?.SetTooltip($"アラーム - {AlarmStatusText.Text}");
     }
 
     // ───────── 設定 UI ─────────
@@ -220,16 +250,31 @@ public sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
-    // ───────── 自動スタート ─────────
+    // ───────── システムトレイ ─────────
 
-    /// <summary>ログイン時の自動スタートで起動されたときに呼ぶ(最小化して待機)。</summary>
-    public void StartMinimized()
+    /// <summary>ログイン時の自動スタートで起動されたとき: ウィンドウを出さずトレイで待機する。</summary>
+    public void StartInTray() => HideToTray();
+
+    private void HideToTray() => AppWindow.Hide();
+
+    /// <summary>トレイから(または2つ目の起動要求で)ウィンドウを表示して前面に出す。</summary>
+    public void ShowFromTray()
     {
-        if (AppWindow.Presenter is OverlappedPresenter p)
+        AppWindow.Show();
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } p)
         {
-            p.Minimize();
+            p.Restore();
         }
+        Activate();
     }
+
+    private void ExitApp()
+    {
+        _exiting = true;
+        Close();
+    }
+
+    // ───────── 自動スタート ─────────
 
     private async Task InitAutoStartAsync()
     {
@@ -275,6 +320,7 @@ public sealed partial class MainWindow : Window
         SettingsPanel.Visibility = Visibility.Collapsed;
         RingPanel.Visibility = Visibility.Visible;
 
+        _hiddenBeforeRing = !AppWindow.IsVisible;
         EnterRingMode();
 
         // 無音モードのアラームは再生しない
