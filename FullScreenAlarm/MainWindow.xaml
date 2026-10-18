@@ -7,12 +7,12 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:local="using:FullScreenAlarm"
     mc:Ignorable="d"
-    Title="アラーム">
+    Title="全画面アラーム">
 
     <Grid x:Name="Root">
 
         <!-- 設定画面: 通常ウィンドウで表示 -->
-        <Grid x:Name="SettingsPanel" Padding="24" RowSpacing="12">
+        <Grid x:Name="SettingsPanel" Padding="24,40,24,24" RowSpacing="12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -87,6 +87,17 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            HorizontalAlignment="Center"/>
             </StackPanel>
+        </Grid>
+
+        <!-- タイトルバー(ExtendsContentIntoTitleBar 用のドラッグ領域)。鳴動画面の背面に隠れる -->
+        <Grid x:Name="AppTitleBar"
+              Height="32"
+              VerticalAlignment="Top"
+              Background="Transparent">
+            <TextBlock Text="全画面アラーム"
+                       FontSize="12"
+                       VerticalAlignment="Center"
+                       Margin="12,0,0,0"/>
         </Grid>
 
         <!-- 鳴動画面: 全画面で表示される -->

@@ -48,7 +48,7 @@
 		    <uap5:Extension Category="windows.startupTask"
 						    Executable="$targetnametoken$.exe"
 						    EntryPoint="Windows.FullTrustApplication">
-			    <uap5:StartupTask TaskId="AlarmStartup" Enabled="false" DisplayName="アラーム" />
+			    <uap5:StartupTask TaskId="AlarmStartup" Enabled="false" DisplayName="全画面アラーム" />
 		    </uap5:Extension>
 	    </Extensions>
     </Application>

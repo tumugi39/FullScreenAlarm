@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -19,7 +20,7 @@ public sealed partial class MainWindow : Window
 {
     private static readonly TimeSpan SnoozeSpan = TimeSpan.FromMinutes(5);
 
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherQueueTimer _timer;
     private readonly DisplayRequest _displayRequest = new();
     private readonly IntPtr _hwnd;
     private readonly List<AlarmRule> _rules = AlarmStore.Load();
@@ -38,11 +39,19 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        // タイトルバー領域までコンテンツを広げ、AppTitleBar をドラッグ領域にする
         ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+
+        // UI スレッドの DispatcherQueue から1秒周期のタイマーを作る(IsRepeating は既定で true)
+        _timer = DispatcherQueue.CreateTimer();
+        _timer.Interval = TimeSpan.FromSeconds(1);
+
         _hwnd = WindowNative.GetWindowHandle(this);
 
         // システムトレイ(アイコンは Assets/alarm.ico。無ければ標準アイコン)
-        _tray = new TrayIcon(_hwnd, Path.Combine(AppContext.BaseDirectory, "Assets", "alarm.ico"), "アラーム");
+        _tray = new TrayIcon(_hwnd, Path.Combine(AppContext.BaseDirectory, "Assets", "alarm.ico"), "全画面アラーム");
         _tray.OpenRequested += () => DispatcherQueue.TryEnqueue(ShowFromTray);
         _tray.ExitRequested += () => DispatcherQueue.TryEnqueue(ExitApp);
 
@@ -133,7 +142,7 @@ public sealed partial class MainWindow : Window
 
     // ───────── 時計 / アラーム判定 ─────────
 
-    private void OnTick(object? sender, object e)
+    private void OnTick(DispatcherQueueTimer sender, object args)
     {
         var now = DateTime.Now;
         UpdateClock(now);
