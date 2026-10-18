@@ -10,41 +10,73 @@ namespace FullScreenAlarm;
 /// <summary>アラーム一覧を alarms.json に保存する。</summary>
 internal static class AlarmStore
 {
+    private const string FileName = "alarms.json";
+
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
-    private static readonly string FilePath = ResolvePath();
 
     /// <summary>
-    /// 保存先を決める。パッケージ版は LocalFolder、
-    /// パッケージ無し(Unpackaged)で動かしたときは %LOCALAPPDATA%\FullScreenAlarm。
+    /// 保存先: ドキュメント\FullScreenAlarm\alarms.json。
+    /// パッケージ内の領域(LocalState や AppData)はアンインストールで一緒に消えるため、その外に置く。
     /// </summary>
+    private static readonly string FilePath = ResolvePath();
+
     private static string ResolvePath()
     {
-        string dir;
-        try
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (string.IsNullOrEmpty(docs))
         {
-            dir = ApplicationData.Current.LocalFolder.Path;
-        }
-        catch (Exception)
-        {
-            // パッケージ無しで実行すると ApplicationData は使えない
-            dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "FullScreenAlarm");
+            docs = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         }
 
+        var dir = Path.Combine(docs, "FullScreenAlarm");
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "alarms.json");
+
+        var path = Path.Combine(dir, FileName);
         Debug.WriteLine($"alarms.json: {path}");
         return path;
     }
 
-    public static List<AlarmRule> Load()
+    /// <summary>旧バージョンの保存先(パッケージの LocalState / AppData)。初回の引き継ぎ用。</summary>
+    private static List<string> LegacyPaths()
     {
-        if (!File.Exists(FilePath)) return new();
+        var paths = new List<string>
+        {
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FullScreenAlarm", FileName),
+        };
 
         try
         {
-            return JsonSerializer.Deserialize<List<AlarmRule>>(File.ReadAllText(FilePath), Options) ?? new();
+            paths.Add(Path.Combine(ApplicationData.Current.LocalFolder.Path, FileName));
+        }
+        catch (Exception)
+        {
+            // パッケージ無しで実行すると ApplicationData は使えない
+        }
+        return paths;
+    }
+
+    /// <summary>読み込むファイルを決める。新しい保存先が優先で、無ければ旧保存先から引き継ぐ。</summary>
+    private static string? FindSourceFile()
+    {
+        if (File.Exists(FilePath)) return FilePath;
+
+        foreach (var legacy in LegacyPaths())
+        {
+            if (File.Exists(legacy)) return legacy;
+        }
+        return null;
+    }
+
+    public static List<AlarmRule> Load()
+    {
+        var source = FindSourceFile();
+        if (source is null) return new();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<AlarmRule>>(File.ReadAllText(source), Options) ?? new();
         }
         catch (Exception ex)
         {
@@ -52,7 +84,7 @@ internal static class AlarmStore
             Debug.WriteLine($"alarms.json の読み込みに失敗: {ex}");
             try
             {
-                File.Move(FilePath, FilePath + ".bak", overwrite: true);
+                File.Move(source, source + ".bak", overwrite: true);
             }
             catch (Exception moveEx)
             {
@@ -66,6 +98,8 @@ internal static class AlarmStore
     {
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+
             // 一時ファイルに書いてから置き換える(書き込み途中で終了しても元のファイルを壊さない)
             var temp = FilePath + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(rules, Options));

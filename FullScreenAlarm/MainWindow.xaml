@@ -91,8 +91,28 @@
 
         <!-- 鳴動画面: 全画面で表示される -->
         <Grid x:Name="RingPanel"
-              Background="#B71C1C"
               Visibility="Collapsed">
+            <Grid.Background>
+                <SolidColorBrush x:Name="RingBrush" Color="#B71C1C"/>
+            </Grid.Background>
+
+            <!-- 背景を赤 ⇄ 黒でゆっくり行き来させる(片道1秒、往復2秒) -->
+            <Grid.Resources>
+                <Storyboard x:Name="RingPulse">
+                    <ColorAnimation Storyboard.TargetName="RingBrush"
+                                    Storyboard.TargetProperty="Color"
+                                    From="#B71C1C"
+                                    To="#000000"
+                                    Duration="0:0:1"
+                                    AutoReverse="True"
+                                    RepeatBehavior="Forever">
+                        <ColorAnimation.EasingFunction>
+                            <SineEase EasingMode="EaseInOut"/>
+                        </ColorAnimation.EasingFunction>
+                    </ColorAnimation>
+                </Storyboard>
+            </Grid.Resources>
+
             <StackPanel HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Spacing="40">

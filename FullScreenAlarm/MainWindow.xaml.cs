@@ -319,6 +319,7 @@ public sealed partial class MainWindow : Window
 
         SettingsPanel.Visibility = Visibility.Collapsed;
         RingPanel.Visibility = Visibility.Visible;
+        RingPulse.Begin();
 
         _hiddenBeforeRing = !AppWindow.IsVisible;
         EnterRingMode();
@@ -341,6 +342,7 @@ public sealed partial class MainWindow : Window
         _isRinging = false;
         _snoozeUntil = snooze ? DateTime.Now + SnoozeSpan : null;
 
+        RingPulse.Stop();
         RingPanel.Visibility = Visibility.Collapsed;
         SettingsPanel.Visibility = Visibility.Visible;
 
