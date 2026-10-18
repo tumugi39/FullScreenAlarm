@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ExtendsContentIntoTitleBar = true;
         _hwnd = WindowNative.GetWindowHandle(this);
 
         // システムトレイ(アイコンは Assets/alarm.ico。無ければ標準アイコン)
