@@ -23,6 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly DisplayRequest _displayRequest = new();
     private readonly IntPtr _hwnd;
     private readonly List<AlarmRule> _rules = AlarmStore.Load();
+    private readonly AppSettings _settings = AppSettings.Load();
 
     private MediaPlayer? _player;
     private AlarmRule? _ringingRule;
@@ -278,13 +279,42 @@ public sealed partial class MainWindow : Window
 
     private async Task InitAutoStartAsync()
     {
-        ApplyAutoStartState(await StartupManager.GetStateAsync());
+        var state = await StartupManager.GetStateAsync();
+
+        // 再インストール直後など: OS 側がオフでも、保存してあった希望に合わせて有効化し直す
+        if (state == StartupTaskState.Disabled && _settings.AutoStart)
+        {
+            state = await StartupManager.SetEnabledAsync(true);
+        }
+
+        // OS 側の状態が確定しているとき(Windows の設定で変更された場合を含む)は、保存する希望もそれに合わせる
+        if (state is StartupTaskState.Enabled or StartupTaskState.DisabledByUser)
+        {
+            SaveAutoStartPreference(state);
+        }
+
+        ApplyAutoStartState(state);
+    }
+
+    /// <summary>実際の状態を「自動スタートを希望しているか」として保存する。</summary>
+    private void SaveAutoStartPreference(StartupTaskState? state)
+    {
+        if (state is null) return; // 取得・変更に失敗したときは保存済みの希望を変えない
+
+        var wanted = state is StartupTaskState.Enabled or StartupTaskState.EnabledByPolicy;
+        if (_settings.AutoStart == wanted) return;
+
+        _settings.AutoStart = wanted;
+        _settings.Save();
     }
 
     private async void AutoStartToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_updatingAutoStart) return;
-        ApplyAutoStartState(await StartupManager.SetEnabledAsync(AutoStartToggle.IsOn));
+
+        var state = await StartupManager.SetEnabledAsync(AutoStartToggle.IsOn);
+        SaveAutoStartPreference(state); // 拒否された場合も含め、実際の結果を保存する
+        ApplyAutoStartState(state);
     }
 
     /// <summary>スタートアップの状態をトグルとヒント文に反映する(拒否された場合も実際の状態に合わせる)。</summary>

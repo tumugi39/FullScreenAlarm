@@ -14,27 +14,8 @@ internal static class AlarmStore
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-    /// <summary>
-    /// 保存先: ドキュメント\FullScreenAlarm\alarms.json。
-    /// パッケージ内の領域(LocalState や AppData)はアンインストールで一緒に消えるため、その外に置く。
-    /// </summary>
-    private static readonly string FilePath = ResolvePath();
-
-    private static string ResolvePath()
-    {
-        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        if (string.IsNullOrEmpty(docs))
-        {
-            docs = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        }
-
-        var dir = Path.Combine(docs, "FullScreenAlarm");
-        Directory.CreateDirectory(dir);
-
-        var path = Path.Combine(dir, FileName);
-        Debug.WriteLine($"alarms.json: {path}");
-        return path;
-    }
+    /// <summary>保存先: ドキュメント\FullScreenAlarm\alarms.json(パッケージの外なのでアンインストールしても残る)。</summary>
+    private static readonly string FilePath = Path.Combine(DataPaths.Folder, FileName);
 
     /// <summary>旧バージョンの保存先(パッケージの LocalState / AppData)。初回の引き継ぎ用。</summary>
     private static List<string> LegacyPaths()
