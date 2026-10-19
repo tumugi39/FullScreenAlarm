@@ -355,7 +355,7 @@ public sealed partial class MainWindow : Window
         _ringingRule = rule;
         _isRinging = true;
         RingTimeText.Text = rule.Time.ToString(@"hh\:mm");
-        RingLabelText.Text = rule.Label;
+        RingLabelText.Text = rule.Label == "" ? "アラーム" : rule.Label;
 
         SettingsPanel.Visibility = Visibility.Collapsed;
         RingPanel.Visibility = Visibility.Visible;

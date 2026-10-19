@@ -104,7 +104,7 @@
         <Grid x:Name="RingPanel"
               Visibility="Collapsed">
             <Grid.Background>
-                <SolidColorBrush x:Name="RingBrush" Color="#B71C1C"/>
+                <SolidColorBrush x:Name="RingBrush" Color="#8B0000"/>
             </Grid.Background>
 
             <!-- 背景を赤 ⇄ 黒でゆっくり行き来させる(片道1秒、往復2秒) -->
@@ -112,9 +112,9 @@
                 <Storyboard x:Name="RingPulse">
                     <ColorAnimation Storyboard.TargetName="RingBrush"
                                     Storyboard.TargetProperty="Color"
-                                    From="#B71C1C"
+                                    From="#8B0000"
                                     To="#000000"
-                                    Duration="0:0:1"
+                                    Duration="0:0:2"
                                     AutoReverse="True"
                                     RepeatBehavior="Forever">
                         <ColorAnimation.EasingFunction>
@@ -127,17 +127,13 @@
             <StackPanel HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Spacing="40">
-                <TextBlock Text="アラーム"
+                <TextBlock x:Name="RingLabelText"
                            FontSize="96"
                            FontWeight="Bold"
                            Foreground="White"
                            HorizontalAlignment="Center"/>
                 <TextBlock x:Name="RingTimeText"
                            FontSize="64"
-                           Foreground="White"
-                           HorizontalAlignment="Center"/>
-                <TextBlock x:Name="RingLabelText"
-                           FontSize="36"
                            Foreground="White"
                            HorizontalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal"
